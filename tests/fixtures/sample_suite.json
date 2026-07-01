@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "input": "Write a haiku about AI",
+      "tags": ["creative"]
+    },
+    {
+      "input": "What is the capital of France?",
+      "tags": ["factual"]
+    }
+  ]
+}
