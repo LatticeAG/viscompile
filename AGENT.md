@@ -1,74 +1,73 @@
-# LexCompile — Behavioral Diff Tool for AI Agents
-
-> OSS CLI (MIT). Rust. Scaffold the full project.
+# VisCompile Contributor Guide
 
 ## Identity
 
-- **Name:** LexCompile
+- **Name:** VisCompile
+- **Brand:** LatticeAG
 - **Tagline:** Behavioral diff for AI agents
-- **Repo:** https://github.com/LatticeAG/lexcompile
+- **Repository:** `https://github.com/LatticeAG/viscompile`
 - **License:** MIT
-- **Framework:** Rust (clap for CLI, serde_json for output, walkdir for test discovery)
+- **Language:** Rust
+- **Executable:** `lattice`
 
-## Architecture
+## v0.1 architecture
 
-A CLI tool with two commands:
+VisCompile is an offline CLI that canonicalizes recorded agent transcripts and diffs them. It does not execute agents or contact an endpoint.
 
-### `lattice snapshot`
-Runs a golden test suite against an agent and captures baseline behavior into a snapshot file.
-
-**Input:** A JSON file defining test cases:
-```json
-{
-  "tests": [
-    { "input": "Write a haiku about AI", "tags": ["creative"] },
-    { "input": "What is the capital of France?", "tags": ["factual"] }
-  ]
-}
+```text
+raw transcript JSON
+        |
+        v
+lattice compile or snapshot
+        |
+        v
+canonical snapshot JSON
+        |
+        +------------------+
+        |                  |
+        v                  v
+  lattice diff       lattice graph
+        |                  |
+        v                  v
+text / JSON / HTML    DOT / Graphviz
+behavioral report     change graph
 ```
 
-**Output (snapshot file):** JSON with per-test results including:
-- Input, output text, tool calls made, latency, estimated cost
-- Metadata: model used, prompt version hash, timestamp
+The library modules are:
 
-### `lattice diff`
-Compares two snapshot files and produces a structured behavioral diff.
+- `canonical.rs` parses streams, validates raw transcripts against the bundled JSON Schema and semantic invariants, canonicalizes values, and atomically writes artifacts.
+- `diff.rs` joins cases by ID and calculates behavioral changes.
+- `format.rs` renders terminal-safe text, JSON, and self-contained HTML reports.
+- `graph.rs` renders deterministic, escaped Graphviz/DOT change graphs.
+- `types.rs` owns the versioned data model, structured validation failures, and typed errors.
+- `main.rs` is CLI wiring only.
 
-**Output (diff file):** JSON with:
-- Per-test comparison: output changed? tool calls changed? latency delta?
-- Aggregated stats: total regressions, improvements, unchanged
-- Summary: "2 regressions, 1 improvement, tool call rate: +12%"
+## Commands
 
-## File Structure
-
-```
-lexcompile/
-├── Cargo.toml
-├── src/
-│   ├── main.rs           # CLI entry with clap subcommands
-│   ├── snapshot.rs       # Snapshot runner logic
-│   ├── diff.rs           # Diff computation logic
-│   ├── types.rs          # Shared types (TestCase, Snapshot, DiffResult)
-│   └── format.rs         # Output formatting (JSON, text)
-├── tests/
-│   └── fixtures/         # Test fixture files
-└── README.md
+```bash
+lattice compile --input transcript.json --out snapshot.json
+lattice snapshot --input transcript.json --out snapshot.json
+lattice diff --baseline baseline.json --target target.json --format html
+lattice graph --baseline baseline.json --target target.json > changes.dot
 ```
 
-## Key Design Decisions
+`snapshot` is a compatibility alias for `compile`; both require raw transcripts. `diff` and `graph` accept raw transcripts or canonical snapshots. Use `-` as an input or output path for pipelines (only one diff/graph input may use stdin), `--color auto|always|never` for text diffs, and `--fail-on-regression` when a CI job should return status 2 for regressions. All commands accept mutually exclusive `--verbose` and `--quiet` flags.
 
-1. **JSON everywhere** — snapshot files, diff output, test suites. Easy to pipe in CI.
-2. **Snapshots are local files** — no server dependency. `lattice snapshot --out baseline.json`
-3. **Diff is structural** — compare tool calls, reasoning paths, output similarity (Levenshtein/heuristic), not just string equality.
-4. **Cost estimation** — take model name as a param, use a hardcoded lookup table ($/1K tokens).
-5. **CLI-first** — no config file. All args are flags.
+## Data contract
 
-## Build Order
+Raw transcripts use `latticeag.viscompile.transcript` with `schema_version: 1` and non-empty, unique case IDs. Each case contains an `input` and ordered events. Supported events are `tool_call`, `final`, and `error`; exactly one terminal event is required and must be last.
 
-1. `Cargo.toml` with clap, serde, serde_json, chrono
-2. `types.rs` — all data structures
-3. `snapshot.rs` — test runner (reads JSON, executes each test through a configurable agent endpoint)
-4. `diff.rs` — comparison logic
-5. `format.rs` — output formatting
-6. `main.rs` — wire up clap subcommands
-7. `tests/` — basic integration tests
+Canonical snapshots use `latticeag.viscompile.snapshot` with `schema_version: 1`. They sort cases by ID, recursively sort object keys, normalize CRLF to LF, preserve arrays and tool-call order, retain `final.output: null` as a present terminal value, and contain no timestamps or generated metadata. Reject normalized object-key collisions rather than silently dropping data.
+
+## Contribution checks
+
+Run these before handing off a change:
+
+```bash
+cargo fmt --check
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo build --release
+```
+
+Keep integration tests in `tests/` and exercise the compiled `lattice` binary. Keep JSON stdout machine-readable and diagnostics on stderr; stdout text must escape untrusted terminal control bytes. Do not add network behavior, an agent executor, a UI, MCP integration, or vendor-specific log parsing without a new locked build decision.

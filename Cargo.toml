@@ -1,10 +1,18 @@
 [package]
-name = "lexcompile"
+name = "viscompile"
 version = "0.1.0"
 edition = "2021"
+description = "VisCompile by LatticeAG - behavioral diff for AI agents"
+license = "MIT"
+
+[[bin]]
+name = "lattice"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
+jsonschema = { version = "0.48.2", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
+termcolor = "1.4"
+thiserror = "2.0"

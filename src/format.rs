@@ -1,20 +1,183 @@
-use crate::types::DiffResult;
+use crate::canonical::canonical_json;
+use crate::types::{escape_untrusted_text, CaseStatus, DiffReport, Result};
+use std::fmt::Write as _;
 
-pub fn format_diff_json(diff: &DiffResult) -> Result<String, serde_json::Error> {
-    serde_json::to_string_pretty(diff)
+pub fn format_diff_json(report: &DiffReport) -> Result<String> {
+    canonical_json(report)
 }
 
-pub fn format_diff_text(diff: &DiffResult) -> String {
-    let mut out = String::new();
-    out.push_str("Behavioral Diff Summary\n");
-    out.push_str("=======================\n\n");
-    out.push_str(&diff.summary);
-    out.push_str("\n\nDetails:\n");
-    for td in &diff.test_diffs {
-        out.push_str(&format!(
-            "- Input: {}\n  Output Changed: {}\n  Tools Changed: {}\n  Latency Delta: {}ms\n",
-            td.input, td.output_changed, td.tool_calls_changed, td.latency_delta
+pub fn format_diff_text(report: &DiffReport) -> String {
+    let summary = &report.summary;
+    let mut output = String::from("VisCompile Behavioral Diff\n");
+    output.push_str("==========================\n\n");
+    output.push_str(&format!(
+        "{} regressions, {} improvements, {} changed, {} added, {} removed, {} unchanged\n",
+        summary.regressions,
+        summary.improvements,
+        summary.changed,
+        summary.added,
+        summary.removed,
+        summary.unchanged
+    ));
+    output.push_str("\nCases:\n");
+
+    for case in &report.cases {
+        let fields = if case.changed_fields.is_empty() {
+            "none".to_string()
+        } else {
+            case.changed_fields.join(", ")
+        };
+        let gate = if case.regression {
+            "regression"
+        } else {
+            "informational"
+        };
+        let case_id = escape_text(&case.id);
+        output.push_str(&format!(
+            "- [{}] {}: {} ({gate})\n",
+            status_name(&case.status),
+            case_id,
+            fields
         ));
     }
-    out
+    output
+}
+
+/// Render untrusted text safely in a terminal-oriented report.
+///
+/// Case IDs originate in input transcripts, so control bytes must be visible rather than allowed
+/// to alter terminal state or inject additional report lines.
+pub fn escape_text(value: &str) -> String {
+    escape_untrusted_text(value)
+}
+
+/// Render a self-contained HTML representation of a behavioral diff.
+///
+/// The report is deliberately rendered without JavaScript or external assets so
+/// it can be saved and inspected offline. All report-derived text is escaped
+/// before it is inserted into the document.
+pub fn format_diff_html(report: &DiffReport) -> String {
+    let summary = &report.summary;
+    let initial_capacity = 2_048usize
+        .saturating_add(report.cases.len().saturating_mul(256))
+        .min(1_048_576);
+    let mut output = String::with_capacity(initial_capacity);
+
+    output.push_str("<!doctype html>\n");
+    output.push_str("<html lang=\"en\">\n<head>\n");
+    output.push_str("  <meta charset=\"utf-8\">\n");
+    output.push_str("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    output.push_str("  <title>VisCompile Behavioral Diff</title>\n");
+    output.push_str("  <style>\n");
+    output.push_str("    :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; }\n");
+    output.push_str(
+        "    body { margin: 2rem auto; max-width: 72rem; padding: 0 1rem; line-height: 1.5; }\n",
+    );
+    output.push_str("    h1 { margin-bottom: .25rem; }\n");
+    output.push_str("    table { border-collapse: collapse; margin: 1.5rem 0; width: 100%; }\n");
+    output.push_str("    th, td { border: 1px solid #8b949e; padding: .65rem .75rem; text-align: left; vertical-align: top; }\n");
+    output.push_str("    th { font-weight: 650; }\n");
+    output.push_str("    .summary { display: flex; flex-wrap: wrap; gap: .75rem; list-style: none; margin: 1rem 0 2rem; padding: 0; }\n");
+    output.push_str("    .summary li { border: 1px solid #8b949e; border-radius: .35rem; padding: .5rem .75rem; }\n");
+    output.push_str("    .status { font-weight: 700; text-transform: capitalize; }\n");
+    output.push_str("    .status-unchanged { color: #57606a; }\n");
+    output.push_str("    .status-added, .status-improved { color: #1a7f37; }\n");
+    output.push_str("    .status-removed, .status-changed { color: #cf222e; }\n");
+    output.push_str("    .regression { color: #cf222e; font-weight: 700; }\n");
+    output.push_str("    .informational { color: #57606a; }\n");
+    output.push_str("    .case-id, .fields { overflow-wrap: anywhere; }\n");
+    output.push_str("  </style>\n</head>\n<body>\n");
+    output.push_str("  <main>\n");
+    output.push_str("    <h1>VisCompile Behavioral Diff</h1>\n");
+    output.push_str("    <p>Deterministic behavioral comparison of agent transcript cases.</p>\n");
+    output.push_str("    <ul class=\"summary\" aria-label=\"Diff summary\">\n");
+    push_summary_item(&mut output, "Regressions", summary.regressions);
+    push_summary_item(&mut output, "Improvements", summary.improvements);
+    push_summary_item(&mut output, "Changed", summary.changed);
+    push_summary_item(&mut output, "Added", summary.added);
+    push_summary_item(&mut output, "Removed", summary.removed);
+    push_summary_item(&mut output, "Unchanged", summary.unchanged);
+    output.push_str("    </ul>\n");
+    output.push_str("    <h2>Cases</h2>\n");
+
+    if report.cases.is_empty() {
+        output.push_str("    <p>No cases were compared.</p>\n");
+    } else {
+        output.push_str("    <table>\n");
+        output.push_str("      <thead><tr><th scope=\"col\">Case</th><th scope=\"col\">Status</th><th scope=\"col\">Changed fields</th><th scope=\"col\">Gate</th></tr></thead>\n");
+        output.push_str("      <tbody>\n");
+
+        for case in &report.cases {
+            let status = status_name(&case.status);
+            let fields = if case.changed_fields.is_empty() {
+                "none".to_string()
+            } else {
+                case.changed_fields.join(", ")
+            };
+            let gate = if case.regression {
+                "Regression"
+            } else {
+                "Informational"
+            };
+            let gate_class = if case.regression {
+                "regression"
+            } else {
+                "informational"
+            };
+
+            output.push_str("        <tr><th scope=\"row\" class=\"case-id\">");
+            push_html_escaped(&mut output, &case.id);
+            output.push_str("</th><td><span class=\"status status-");
+            output.push_str(status);
+            output.push_str("\">");
+            push_html_escaped(&mut output, status);
+            output.push_str("</span></td><td class=\"fields\">");
+            push_html_escaped(&mut output, &fields);
+            output.push_str("</td><td><span class=\"");
+            output.push_str(gate_class);
+            output.push_str("\">");
+            output.push_str(gate);
+            output.push_str("</span></td></tr>\n");
+        }
+
+        output.push_str("      </tbody>\n    </table>\n");
+    }
+
+    output.push_str("  </main>\n</body>\n</html>\n");
+    output
+}
+
+fn push_summary_item(output: &mut String, label: &str, value: u64) {
+    output.push_str("      <li><strong>");
+    output.push_str(label);
+    output.push_str(":</strong> ");
+    output.push_str(&value.to_string());
+    output.push_str("</li>\n");
+}
+
+fn push_html_escaped(output: &mut String, value: &str) {
+    for character in value.chars() {
+        match character {
+            '&' => output.push_str("&amp;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            '"' => output.push_str("&quot;"),
+            '\'' => output.push_str("&#39;"),
+            character if character.is_control() => {
+                write!(output, "&#x{:X};", character as u32)
+                    .expect("writing to a String cannot fail");
+            }
+            _ => output.push(character),
+        }
+    }
+}
+
+fn status_name(status: &CaseStatus) -> &'static str {
+    match status {
+        CaseStatus::Unchanged => "unchanged",
+        CaseStatus::Added => "added",
+        CaseStatus::Removed => "removed",
+        CaseStatus::Changed => "changed",
+        CaseStatus::Improved => "improved",
+    }
 }

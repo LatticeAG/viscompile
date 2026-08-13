@@ -1,0 +1,31 @@
+# Rust build artifacts
+/target/
+/debug/
+/release/
+/build/
+**/*.rs.bk
+*.pdb
+*.dSYM/
+
+# Coverage and profiling output
+*.profraw
+*.profdata
+lcov.info
+
+# Editor and operating system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# internal artifacts - IP protected, never shipped
+*SPEC*.md
+*REVIEW*.md
+*prompt*.md
+*ROADMAP*.md
+*WHAT-NEXT*.md
+*HANDOFF*.md
+*PROD*.md

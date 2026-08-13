@@ -1,12 +1,33 @@
 {
-  "tests": [
+  "kind": "latticeag.viscompile.transcript",
+  "schema_version": 1,
+  "cases": [
     {
+      "id": "creative-haiku",
       "input": "Write a haiku about AI",
-      "tags": ["creative"]
+      "events": [
+        {
+          "type": "final",
+          "output": "Circuits hum softly\nNew thoughts bloom in silent code\nDawn learns how to dream"
+        }
+      ]
     },
     {
+      "id": "factual-capital",
       "input": "What is the capital of France?",
-      "tags": ["factual"]
+      "events": [
+        {
+          "type": "tool_call",
+          "name": "knowledge.lookup",
+          "arguments": {
+            "query": "capital of France"
+          }
+        },
+        {
+          "type": "final",
+          "output": "Paris."
+        }
+      ]
     }
   ]
 }
