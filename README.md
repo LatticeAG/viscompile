@@ -21,14 +21,7 @@ The installed executable is `lattice`. `SPEC.md` is historical product vision. T
 
 ## Install
 
-From crates.io (binary name `lattice`):
-
-```bash
-cargo install viscompile
-lattice --version
-```
-
-From this repository:
+From this repository (binary name `lattice`):
 
 ```bash
 cargo install --path .
@@ -41,6 +34,8 @@ Or build a release binary:
 cargo build --release
 ./target/release/lattice --help
 ```
+
+> crates.io publishing pending - `cargo install viscompile` will work once the crate is published.
 
 MSRV is Rust 1.85.
 
