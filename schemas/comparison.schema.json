@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://latticeag.dev/schemas/viscompile/comparison-v1.schema.json",
+  "title": "VisCompile comparison v1",
+  "description": "Evidence comparison report with JSON Pointers and why-codes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schema_version",
+    "profile",
+    "baseline_digest",
+    "target_digest",
+    "summary",
+    "cases"
+  ],
+  "properties": {
+    "kind": {
+      "const": "latticeag.viscompile.comparison"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "profile": {
+      "const": "latticeag.viscompile/v1"
+    },
+    "baseline_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "target_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unchanged",
+        "added",
+        "removed",
+        "changed",
+        "regressions",
+        "improvements"
+      ],
+      "properties": {
+        "unchanged": { "type": "integer", "minimum": 0 },
+        "added": { "type": "integer", "minimum": 0 },
+        "removed": { "type": "integer", "minimum": 0 },
+        "changed": { "type": "integer", "minimum": 0 },
+        "regressions": { "type": "integer", "minimum": 0 },
+        "improvements": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "regression",
+        "changed_fields",
+        "why_codes",
+        "changes",
+        "tool_call_alignment"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["unchanged", "added", "removed", "changed", "improved"]
+        },
+        "regression": { "type": "boolean" },
+        "changed_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "why_codes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "case_added",
+              "case_removed",
+              "error_raised",
+              "error_resolved",
+              "input_changed",
+              "tool_call_reordered",
+              "tool_call_removed",
+              "tool_call_added",
+              "tool_call_arguments_changed",
+              "output_changed",
+              "error_changed"
+            ]
+          }
+        },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/change" }
+        },
+        "tool_call_alignment": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/alignment" }
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operation", "before", "after"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "operation": {
+          "type": "string",
+          "enum": ["add", "remove", "replace", "type_change"]
+        },
+        "before": { "$ref": "#/$defs/value_slot" },
+        "after": { "$ref": "#/$defs/value_slot" }
+      }
+    },
+    "value_slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["presence"],
+      "properties": {
+        "presence": { "enum": ["absent", "present"] },
+        "value": true
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "presence": { "const": "absent" } },
+            "required": ["presence"]
+          },
+          "then": { "not": { "required": ["value"] } }
+        },
+        {
+          "if": {
+            "properties": { "presence": { "const": "present" } },
+            "required": ["presence"]
+          },
+          "then": { "required": ["value"] }
+        }
+      ]
+    },
+    "alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_index", "target_index", "relation"],
+      "properties": {
+        "baseline_index": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "target_index": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "relation": {
+          "type": "string",
+          "enum": ["equal", "replace", "remove", "insert"]
+        }
+      }
+    }
+  }
+}

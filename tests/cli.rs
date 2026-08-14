@@ -391,7 +391,54 @@ fn invalid_transcript_and_format_fail_with_nonzero_status() {
         "yaml".to_string(),
     ]);
     assert!(!invalid_format.status.success());
+    assert_eq!(invalid_format.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&invalid_format.stderr).contains("invalid value"));
+}
+
+#[test]
+fn version_prints_crate_version() {
+    let output = lattice(&["--version".to_string()]);
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("0.1.0"),
+        "version output should include the crate version: {stdout}"
+    );
+}
+
+#[test]
+fn help_and_version_exit_0() {
+    for flag in ["--help", "-h", "--version", "-V"] {
+        let output = lattice(&[flag.to_string()]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{flag} should exit 0\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn clap_usage_errors_exit_1() {
+    let temp = TempDir::new("clap-usage");
+    let valid = temp.file("valid.json");
+    write(&valid, &single_final_transcript("valid", "done"));
+
+    let yaml = lattice(&[
+        "diff".to_string(),
+        "--baseline".to_string(),
+        argument(&valid),
+        "--target".to_string(),
+        argument(&valid),
+        "--format".to_string(),
+        "yaml".to_string(),
+    ]);
+    assert_eq!(yaml.status.code(), Some(1));
+
+    let unknown = lattice(&["not-a-command".to_string()]);
+    assert_eq!(unknown.status.code(), Some(1));
 }
 
 fn single_final_transcript(id: &str, output: &str) -> String {

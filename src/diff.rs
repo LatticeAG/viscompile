@@ -118,3 +118,62 @@ fn changed_fields(baseline: &CanonicalCase, target: &CanonicalCase) -> Vec<Strin
     }
     fields
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{CanonicalCase, CanonicalOutput, CanonicalToolCall, SNAPSHOT_KIND};
+    use serde_json::json;
+
+    fn snapshot(cases: Vec<CanonicalCase>) -> CanonicalSnapshot {
+        CanonicalSnapshot {
+            kind: SNAPSHOT_KIND.to_string(),
+            schema_version: SCHEMA_VERSION,
+            cases,
+        }
+    }
+
+    fn output_case(id: &str, output: serde_json::Value) -> CanonicalCase {
+        CanonicalCase {
+            id: id.to_string(),
+            input: json!("input"),
+            tool_calls: Vec::new(),
+            output: CanonicalOutput::Value(output),
+            error: None,
+        }
+    }
+
+    fn error_case(id: &str, message: &str) -> CanonicalCase {
+        CanonicalCase {
+            id: id.to_string(),
+            input: json!("input"),
+            tool_calls: vec![CanonicalToolCall {
+                name: "lookup".to_string(),
+                arguments: json!({}),
+            }],
+            output: CanonicalOutput::Absent,
+            error: Some(message.to_string()),
+        }
+    }
+
+    #[test]
+    fn diff_snapshots_marks_error_resolution_as_improvement() {
+        let baseline = snapshot(vec![error_case("lookup", "upstream unavailable")]);
+        let target = snapshot(vec![output_case("lookup", json!("Record found."))]);
+        let report = diff_snapshots(&baseline, &target);
+        assert_eq!(report.summary.improvements, 1);
+        assert_eq!(report.summary.regressions, 0);
+        assert_eq!(report.cases[0].status, CaseStatus::Improved);
+    }
+
+    #[test]
+    fn diff_snapshots_marks_changed_output_as_regression() {
+        let baseline = snapshot(vec![output_case("capital", json!("Paris."))]);
+        let target = snapshot(vec![output_case("capital", json!("Lyon."))]);
+        let report = diff_snapshots(&baseline, &target);
+        assert_eq!(report.summary.changed, 1);
+        assert_eq!(report.summary.regressions, 1);
+        assert_eq!(report.cases[0].status, CaseStatus::Changed);
+        assert_eq!(report.cases[0].changed_fields, vec!["output".to_string()]);
+    }
+}

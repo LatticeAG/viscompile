@@ -13,9 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Forbid HTTP clients
+        run: |
+          if grep -q '^name = "reqwest"$' Cargo.lock; then
+            echo "reqwest must not appear in Cargo.lock"
+            exit 1
+          fi
+      - name: Format
+        run: cargo fmt --check
       - name: Build
         run: cargo build
       - name: Test
         run: cargo test
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
+      - name: Release
+        run: cargo build --release

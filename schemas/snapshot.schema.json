@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://latticeag.dev/schemas/viscompile/snapshot-v1.schema.json",
+  "title": "VisCompile snapshot v1",
+  "description": "Canonical snapshot emitted by VisCompile compile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "cases"],
+  "properties": {
+    "kind": {
+      "const": "latticeag.viscompile.snapshot"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input": true,
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tool_call"
+          }
+        },
+        "output": true,
+        "error": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["output"],
+          "not": {
+            "required": ["error"]
+          }
+        },
+        {
+          "required": ["error"],
+          "not": {
+            "required": ["output"]
+          }
+        }
+      ]
+    },
+    "tool_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "arguments"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": true
+      }
+    }
+  }
+}

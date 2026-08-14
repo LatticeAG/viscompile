@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://latticeag.dev/schemas/viscompile/diff-v1.schema.json",
+  "title": "VisCompile diff v1",
+  "description": "Summary behavioral diff report emitted by VisCompile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "summary", "cases"],
+  "properties": {
+    "kind": {
+      "const": "latticeag.viscompile.diff"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unchanged",
+        "added",
+        "removed",
+        "changed",
+        "regressions",
+        "improvements"
+      ],
+      "properties": {
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "regressions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "improvements": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "regression", "changed_fields"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["unchanged", "added", "removed", "changed", "improved"]
+        },
+        "regression": {
+          "type": "boolean"
+        },
+        "changed_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

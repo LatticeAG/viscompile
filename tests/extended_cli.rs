@@ -685,3 +685,608 @@ fn unsafe_case_ids_are_escaped_and_key_normalization_collisions_fail_closed() {
     );
     assert!(!collision_out.exists());
 }
+
+#[test]
+fn both_stdin_sides_are_rejected() {
+    let output = lattice(vec![
+        "diff".into(),
+        "--baseline".into(),
+        "-".into(),
+        "--target".into(),
+        "-".into(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("VC1014"));
+    assert!(stderr.contains("stdin"));
+}
+
+#[test]
+fn diff_out_dash_requires_json() {
+    let temp = TempDir::new("out-dash");
+    let baseline = temp.file("baseline.json");
+    let target = temp.file("target.json");
+    write_bytes(&baseline, &single_final_transcript("case", json!("before")));
+    write_bytes(&target, &single_final_transcript("case", json!("after")));
+
+    for format in ["text", "html"] {
+        let output = lattice(vec![
+            "diff".into(),
+            "--baseline".into(),
+            argument(&baseline),
+            "--target".into(),
+            argument(&target),
+            "--format".into(),
+            format.into(),
+            "--out".into(),
+            "-".into(),
+        ]);
+        assert_eq!(output.status.code(), Some(1), "format {format}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("VC1015"));
+    }
+}
+
+#[test]
+fn graph_fail_on_regression_exits_2() {
+    let temp = TempDir::new("graph-gate");
+    let baseline = temp.file("baseline.json");
+    let target = temp.file("target.json");
+    write_bytes(
+        &baseline,
+        &single_final_transcript("capital", json!("Paris.")),
+    );
+    write_bytes(&target, &single_final_transcript("capital", json!("Lyon.")));
+
+    let output = lattice(vec![
+        "graph".into(),
+        "--baseline".into(),
+        argument(&baseline),
+        "--target".into(),
+        argument(&target),
+        "--fail-on-regression".into(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn duplicate_case_id_fails() {
+    let temp = TempDir::new("dup-id");
+    let input = temp.file("dup.json");
+    let out = temp.file("out.json");
+    write_bytes(
+        &input,
+        &transcript(vec![
+            final_case("same", json!("a"), json!("a")),
+            final_case("same", json!("b"), json!("b")),
+        ]),
+    );
+    let output = lattice(vec![
+        "compile".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("VC1002"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn blank_case_id_fails() {
+    let temp = TempDir::new("blank-id");
+    let input = temp.file("blank.json");
+    let out = temp.file("out.json");
+    write_bytes(
+        &input,
+        &transcript(vec![final_case("\r\n", json!("x"), json!("y"))]),
+    );
+    let output = lattice(vec![
+        "compile".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("VC1006"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn invalid_json_encoded_arguments_fail() {
+    let temp = TempDir::new("bad-args");
+    let input = temp.file("bad.json");
+    let out = temp.file("out.json");
+    write_bytes(
+        &input,
+        br#"{
+  "kind": "latticeag.viscompile.transcript",
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "broken",
+      "input": "x",
+      "events": [
+        {"type": "tool_call", "name": "search", "arguments": "{not json"},
+        {"type": "final", "output": "y"}
+      ]
+    }
+  ]
+}"#,
+    );
+    let output = lattice(vec![
+        "compile".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("VC1008"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn unknown_kind_fails() {
+    let temp = TempDir::new("unknown-kind");
+    let input = temp.file("diff-doc.json");
+    write_bytes(
+        &input,
+        br#"{
+  "kind": "latticeag.viscompile.diff",
+  "schema_version": 1,
+  "summary": {
+    "unchanged": 0, "added": 0, "removed": 0,
+    "changed": 0, "regressions": 0, "improvements": 0
+  },
+  "cases": []
+}"#,
+    );
+    let valid = temp.file("valid.json");
+    write_bytes(&valid, &single_final_transcript("ok", json!("ok")));
+
+    let output = lattice(vec![
+        "diff".into(),
+        "--baseline".into(),
+        argument(&input),
+        "--target".into(),
+        argument(&valid),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("VC1011"));
+}
+
+#[test]
+fn snapshot_output_and_error_together_fails() {
+    let temp = TempDir::new("both-terminals");
+    let snapshot = temp.file("both.json");
+    let valid = temp.file("valid.json");
+    write_bytes(
+        &snapshot,
+        br#"{
+  "kind": "latticeag.viscompile.snapshot",
+  "schema_version": 1,
+  "cases": [
+    {"id": "one", "input": "x", "output": "y", "error": "nope"}
+  ]
+}"#,
+    );
+    write_bytes(&valid, &single_final_transcript("ok", json!("ok")));
+    let output = lattice(vec![
+        "diff".into(),
+        "--baseline".into(),
+        argument(&snapshot),
+        "--target".into(),
+        argument(&valid),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("JSON Schema") || stderr.contains("VC1009") || stderr.contains("VC1013")
+    );
+}
+
+#[test]
+fn compile_overwrites_existing_out() {
+    let temp = TempDir::new("overwrite");
+    let input = temp.file("in.json");
+    let out = temp.file("out.json");
+    write_bytes(&input, &single_final_transcript("one", json!("first")));
+    write_bytes(&out, b"stale-bytes");
+
+    let first = lattice(vec![
+        "compile".into(),
+        "--quiet".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_success(&first);
+    let first_bytes = fs::read(&out).expect("first out");
+
+    write_bytes(&input, &single_final_transcript("one", json!("second")));
+    let second = lattice(vec![
+        "compile".into(),
+        "--quiet".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_success(&second);
+    let second_bytes = fs::read(&out).expect("second out");
+    assert_ne!(first_bytes, second_bytes);
+    let snapshot = parse_json(&second_bytes);
+    assert_eq!(snapshot["cases"][0]["output"], "second");
+}
+
+#[test]
+fn sample_suite_fixture_compiles() {
+    let temp = TempDir::new("sample-suite");
+    let out = temp.file("sample.snapshot.json");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("sample_suite.json");
+    let output = lattice(vec![
+        "compile".into(),
+        "--quiet".into(),
+        "--input".into(),
+        argument(&fixture),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_success(&output);
+    let snapshot = parse_json(&fs::read(&out).expect("read sample snapshot"));
+    assert_eq!(snapshot["kind"], "latticeag.viscompile.snapshot");
+    assert_eq!(snapshot["cases"][0]["id"], "creative-haiku");
+    assert_eq!(snapshot["cases"][1]["id"], "factual-capital");
+    assert_eq!(
+        snapshot["cases"][1]["tool_calls"][0]["name"],
+        "knowledge.lookup"
+    );
+}
+
+#[test]
+fn max_bytes_rejects_oversize() {
+    let temp = TempDir::new("max-bytes-reject");
+    let input = temp.file("big.json");
+    let out = temp.file("out.json");
+    let body = "x".repeat(1024);
+    write_bytes(
+        &input,
+        &transcript(vec![final_case(
+            "big",
+            json!({"body": body.clone()}),
+            json!({"body": body}),
+        )]),
+    );
+    assert!(fs::metadata(&input).expect("metadata").len() > 200);
+
+    let output = lattice(vec![
+        "compile".into(),
+        "--max-bytes".into(),
+        "200".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("VC1201"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn max_bytes_zero_allows_oversize() {
+    let temp = TempDir::new("max-bytes-zero");
+    let input = temp.file("large.json");
+    let out = temp.file("large.snapshot.json");
+    let large_value = "x".repeat(1024 * 1024);
+    write_bytes(
+        &input,
+        &transcript(vec![final_case(
+            "large-case",
+            json!({"body": large_value.clone()}),
+            json!({"body": large_value.clone()}),
+        )]),
+    );
+
+    let output = lattice(vec![
+        "compile".into(),
+        "--quiet".into(),
+        "--max-bytes".into(),
+        "0".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&out),
+    ]);
+    assert_success(&output);
+    let snapshot = parse_json(&fs::read(&out).expect("read large snapshot"));
+    assert_eq!(
+        snapshot["cases"][0]["output"]["body"]
+            .as_str()
+            .expect("large output string")
+            .len(),
+        large_value.len()
+    );
+}
+
+#[test]
+fn color_never_matches_format_diff_text() {
+    let temp = TempDir::new("color-never-eq");
+    let baseline = temp.file("baseline.json");
+    let target = temp.file("target.json");
+    write_bytes(
+        &baseline,
+        &single_final_transcript("color-case", json!("before")),
+    );
+    write_bytes(
+        &target,
+        &single_final_transcript("color-case", json!("after")),
+    );
+
+    let output = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&baseline),
+        "--target".into(),
+        argument(&target),
+        "--format".into(),
+        "text".into(),
+        "--color".into(),
+        "never".into(),
+    ]);
+    assert_success(&output);
+
+    let baseline_snapshot = viscompile::load_snapshot(&baseline).expect("load baseline");
+    let target_snapshot = viscompile::load_snapshot(&target).expect("load target");
+    let report = viscompile::diff_snapshots(&baseline_snapshot, &target_snapshot);
+    let expected = viscompile::format_diff_text(&report);
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+#[test]
+fn digest_is_stable_and_require_digest_gates() {
+    let temp = TempDir::new("digest-stable");
+    let input = temp.file("in.json");
+    let first_out = temp.file("first.snapshot.json");
+    let second_out = temp.file("second.snapshot.json");
+    let first_digest = temp.file("first.digest.txt");
+    let second_digest = temp.file("second.digest.txt");
+    write_bytes(&input, &single_final_transcript("capital", json!("Paris.")));
+
+    let first = lattice(vec![
+        "compile".into(),
+        "--quiet".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&first_out),
+        "--digest-out".into(),
+        argument(&first_digest),
+    ]);
+    assert_success(&first);
+
+    let second = lattice(vec![
+        "snapshot".into(),
+        "--quiet".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&second_out),
+        "--digest-out".into(),
+        argument(&second_digest),
+    ]);
+    assert_success(&second);
+
+    let digest = fs::read_to_string(&first_digest).expect("read digest");
+    assert_eq!(
+        digest,
+        fs::read_to_string(&second_digest).expect("second digest")
+    );
+    assert!(digest.starts_with("sha256:"));
+    assert_eq!(digest.trim().len(), 71);
+    assert!(digest.ends_with('\n'));
+
+    let verbose = lattice(vec![
+        "compile".into(),
+        "--verbose".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&first_out),
+    ]);
+    assert_success(&verbose);
+    assert!(String::from_utf8_lossy(&verbose.stderr).contains("snapshot digest sha256:"));
+
+    let gated = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&first_out),
+        "--target".into(),
+        argument(&second_out),
+        "--format".into(),
+        "json".into(),
+        "--require-baseline-digest".into(),
+        digest.trim().to_string(),
+        "--require-target-digest".into(),
+        digest.trim().to_string(),
+    ]);
+    assert_success(&gated);
+    let report = parse_json(&gated.stdout);
+    assert_eq!(report["summary"]["unchanged"], 1);
+}
+
+#[test]
+fn require_digest_mismatch_exits_1_without_out() {
+    let temp = TempDir::new("digest-mismatch");
+    let input = temp.file("in.json");
+    let snapshot = temp.file("snap.json");
+    let report = temp.file("report.json");
+    write_bytes(&input, &single_final_transcript("capital", json!("Paris.")));
+
+    let compile = lattice(vec![
+        "compile".into(),
+        "--quiet".into(),
+        "--input".into(),
+        argument(&input),
+        "--out".into(),
+        argument(&snapshot),
+    ]);
+    assert_success(&compile);
+
+    let wrong = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    let output = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&snapshot),
+        "--target".into(),
+        argument(&snapshot),
+        "--out".into(),
+        argument(&report),
+        "--format".into(),
+        "json".into(),
+        "--require-baseline-digest".into(),
+        wrong.into(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("VC1301"));
+    assert!(output.stdout.is_empty());
+    assert!(!report.exists());
+}
+
+#[test]
+fn comparison_json_projects_v1_summary() {
+    let temp = TempDir::new("comparison-json");
+    let baseline = temp.file("baseline.json");
+    let target = temp.file("target.json");
+    write_bytes(
+        &baseline,
+        &transcript(vec![
+            final_case("kept", json!("keep"), json!("same")),
+            final_case("removed", json!("remove"), json!("old")),
+        ]),
+    );
+    write_bytes(
+        &target,
+        &transcript(vec![
+            final_case("added", json!("add"), json!("new")),
+            final_case("kept", json!("keep"), json!("same")),
+        ]),
+    );
+
+    let summary = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&baseline),
+        "--target".into(),
+        argument(&target),
+        "--report".into(),
+        "summary".into(),
+        "--format".into(),
+        "json".into(),
+    ]);
+    assert_success(&summary);
+    let summary_report = parse_json(&summary.stdout);
+    assert_eq!(summary_report["kind"], "latticeag.viscompile.diff");
+    assert!(summary_report.get("why_codes").is_none());
+
+    let comparison = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&baseline),
+        "--target".into(),
+        argument(&target),
+        "--report".into(),
+        "comparison".into(),
+        "--format".into(),
+        "json".into(),
+    ]);
+    assert_success(&comparison);
+    let comparison_report = parse_json(&comparison.stdout);
+    assert_eq!(comparison_report["kind"], "latticeag.viscompile.comparison");
+    assert_eq!(comparison_report["summary"], summary_report["summary"]);
+    assert_eq!(
+        comparison_report["cases"][0]["status"],
+        summary_report["cases"][0]["status"]
+    );
+    assert!(comparison_report["cases"][0].get("why_codes").is_some());
+    assert!(comparison_report["cases"][0].get("changes").is_some());
+    assert!(comparison_report["cases"][0]
+        .get("tool_call_alignment")
+        .is_some());
+    viscompile::canonical::validate_comparison_schema(&comparison_report)
+        .expect("comparison JSON matches the bundled schema");
+}
+
+#[test]
+fn comparison_text_names_pointer_and_why_code() {
+    let temp = TempDir::new("comparison-text");
+    let baseline = temp.file("baseline.json");
+    let target = temp.file("target.json");
+    write_bytes(
+        &baseline,
+        &single_final_transcript("capital-question", json!("Paris.")),
+    );
+    write_bytes(
+        &target,
+        &single_final_transcript("capital-question", json!("Lyon.")),
+    );
+
+    let output = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&baseline),
+        "--target".into(),
+        argument(&target),
+        "--report".into(),
+        "comparison".into(),
+        "--format".into(),
+        "text".into(),
+    ]);
+    assert_success(&output);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("/output"));
+    assert!(text.contains("output_changed"));
+    assert!(text.contains("VisCompile Behavioral Comparison"));
+}
+
+#[test]
+fn comparison_html_escapes_case_id() {
+    let temp = TempDir::new("comparison-html");
+    let baseline = temp.file("baseline.json");
+    let target = temp.file("target.json");
+    let unsafe_id = "<script>alert(1)</script>";
+    write_bytes(
+        &baseline,
+        &single_final_transcript(unsafe_id, json!("before")),
+    );
+    write_bytes(&target, &single_final_transcript(unsafe_id, json!("after")));
+
+    let output = lattice(vec![
+        "diff".into(),
+        "--quiet".into(),
+        "--baseline".into(),
+        argument(&baseline),
+        "--target".into(),
+        argument(&target),
+        "--report".into(),
+        "comparison".into(),
+        "--format".into(),
+        "html".into(),
+    ]);
+    assert_success(&output);
+    let html = String::from_utf8_lossy(&output.stdout);
+    assert!(!html.contains("<script>alert(1)</script>"));
+    assert!(html.contains("&lt;script&gt;"));
+}
