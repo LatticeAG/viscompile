@@ -1,5 +1,7 @@
 # VisCompile
 
+**The open, local-first agent observability + collaboration stack: record, replay, diff, and inspect agent behavior - then plan and ship with humans in the same workspace.**
+
 Behavioral diff tooling for AI agents, by LatticeAG.
 
 VisCompile turns recorded agent transcripts into deterministic canonical snapshots, then compares them by stable case ID. It is an offline Rust CLI: it never executes an agent or sends a network request.
@@ -218,6 +220,12 @@ cargo build --release
 ```
 
 Integration tests live in `tests/` and invoke the compiled `lattice` binary.
+
+## How this compares
+
+Hosted platforms offer evals and dashboards. VisCompile is a deterministic offline behavioral diff that runs in CI as an exit-code gate ("did agent behavior change?"). It is a regression gate hosted platforms cannot run for you.
+
+**Everything the new YC agent-observability startups are building - open-sourced, self-hosted, MIT.**
 
 ## License
 
