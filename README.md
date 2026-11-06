@@ -35,7 +35,7 @@ cargo build --release
 ./target/release/lattice --help
 ```
 
-> crates.io publishing pending - `cargo install viscompile` will work once the crate is published.
+> crates.io publishing pending - `cargo install viscompile` will work once the crate is published. Published GitHub releases can also provide Linux x86-64 and ARM64 binary archives and SHA-256 checksums; see the [releases page](https://github.com/LatticeAG/viscompile/releases).
 
 MSRV is Rust 1.86. The repository toolchain file selects Rust 1.86.0 when using rustup; explicit toolchain overrides must also meet the MSRV.
 
