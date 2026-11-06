@@ -37,7 +37,7 @@ cargo build --release
 
 > crates.io publishing pending - `cargo install viscompile` will work once the crate is published.
 
-MSRV is Rust 1.85.
+MSRV is Rust 1.86. The repository toolchain file selects Rust 1.86.0 when using rustup; explicit toolchain overrides must also meet the MSRV.
 
 ## Transcript format
 
