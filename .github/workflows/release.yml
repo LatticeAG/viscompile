@@ -1,0 +1,38 @@
+name: Release binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  binary:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.86.0
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Package binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p release
+          cp target/release/lattice release/
+          tar -C release -czf "lattice-${TARGET}.tar.gz" lattice
+          sha256sum "lattice-${TARGET}.tar.gz" > "lattice-${TARGET}.tar.gz.sha256"
+      - name: Attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          TARGET: ${{ matrix.target }}
+        run: gh release upload "$RELEASE_TAG" "lattice-${TARGET}.tar.gz" "lattice-${TARGET}.tar.gz.sha256"
